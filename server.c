@@ -5,6 +5,8 @@
 #include<unistd.h>
 #include<stdio.h>
 #include<stdlib.h>
+#include<fcntl.h>
+#include<sys/mman.h>
 int main(int argc, char* argv[]){
     int socket_fd;
     if((socket_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP))< 0){
@@ -39,6 +41,17 @@ int main(int argc, char* argv[]){
     port = ntohs(localaddr.sin_port);
     addr = inet_ntoa(localaddr.sin_addr);
     printf("addr: %s port: %d\n", addr, port);
+    int page_fd = open("./page/mainpage.html",O_RDONLY);
+    if (page_fd == -1){
+        printf("page file open error %s\n", strerror(errno));
+        exit(1);
+    }
+    int file_size = get_file_size(page_fd);
+    void* file_addr = mmap(0, file_size, PROT_READ, MAP_SHARED, page_fd, 0);
+    if(file_addr == MAP_FAILED){
+        printf("file map error %s\n", strerror(errno));
+        exit(1);
+    }
     for(;;){
         
         buf = temp;
@@ -94,11 +107,12 @@ int main(int argc, char* argv[]){
         }
         fputs(buf, stdout);
         
-        char html[] ="HTTP/1.1 200 OK\r\nUser-Agent: curl/7.16.3 libcurl/7.16.3 OpenSSL/0.9.7l zlib/1.2.3\r\nHost: www.example.com\r\nAccept-Language: en, mi\r\nDate: Mon, 27 Jul 2009 12:28:53 GMT\r\nServer: Apache\r\nLast-Modified: Wed, 22 Jul 2009 19:15:56 GMT\r\nnAccept-Ranges: bytes\r\nVary: Accept-Encoding\r\nContent-Type: text/html\r\n\r\n<html>\n<head>\n</head>\n<body>\n<h1>\nSun Yulong\n</h1>\n</body>\n</html>";
+        char html[] ="HTTP/1.1 200 OK\r\nUser-Agent: curl/7.16.3 libcurl/7.16.3 OpenSSL/0.9.7l zlib/1.2.3\r\nHost: www.example.com\r\nAccept-Language: en, mi\r\nDate: Mon, 27 Jul 2009 12:28:53 GMT\r\nServer: Apache\r\nLast-Modified: Wed, 22 Jul 2009 19:15:56 GMT\r\nnAccept-Ranges: bytes\r\nVary: Accept-Encoding\r\nContent-Type: text/html\r\n\r\n";
         int nleft = (int)sizeof(html);
         strcpy(buf, html);
-        while(nleft > 0){
+         while(nleft > 0){
             n = write(serv_fd, buf, nleft);
+            printf("write size : %d\n", n);
             if(n < 0){
                 printf("write  error %s\n", strerror(errno));
                 exit(1);
@@ -106,7 +120,25 @@ int main(int argc, char* argv[]){
             nleft -= n;
             buf += n;
         }
+        while(file_size > 0){
+            printf("page size: %d\n", file_size);
+            n = write(serv_fd, file_addr, file_size);
+            printf("write size : %d\n", n);
+            if(n < 0){
+                printf("write  error %s\n", strerror(errno));
+                exit(1);
+            }
+            file_size -= n;
+            file_addr += n;
+        }
         close(serv_fd);
         exit(0);
     }
+}
+int get_file_size(int fd){
+    FILE* f = fdopen(fd, "r");
+    fseek(f, 0, SEEK_END);
+    int size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    return size;
 }

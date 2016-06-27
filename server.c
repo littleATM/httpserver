@@ -7,6 +7,7 @@
 #include<stdlib.h>
 #include<fcntl.h>
 #include<sys/mman.h>
+#include"load_config.h"
 int main(int argc, char* argv[]){
     int socket_fd;
     if((socket_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP))< 0){
@@ -14,13 +15,17 @@ int main(int argc, char* argv[]){
         exit(1);
     }
     struct sockaddr_in servaddr;
-    servaddr.sin_family = AF_INET;
-    char* addr = "23.105.194.17";
-    if(inet_aton(addr, (struct in_addr*)&servaddr.sin_addr) == 0){
-        printf("aton error %s\n", strerror(errno));
-        exit(1);
+    if(!load_config(&servaddr)){
+        printf("config file error\n");
+        exit(0);
     }
-    servaddr.sin_port = htons(80);
+//    servaddr.sin_family = AF_INET;
+//    char* addr = "23.105.194.17";
+//    if(inet_aton(addr, (struct in_addr*)&servaddr.sin_addr) == 0){
+//        printf("aton error %s\n", strerror(errno));
+//        exit(1);
+//    }
+//    servaddr.sin_port = htons(80);
     if(bind(socket_fd, (const struct sockaddr*)&servaddr, sizeof(servaddr)) < 0){
         printf("bind error %s\n", strerror(errno));
         exit(1);
@@ -36,12 +41,11 @@ int main(int argc, char* argv[]){
     int len; 
     struct sockaddr_in localaddr; 
     len = sizeof(struct sockaddr_in);
-    uint16_t port;
     getsockname(socket_fd, (struct sockaddr*)&localaddr, &len);
-    port = ntohs(localaddr.sin_port);
-    addr = inet_ntoa(localaddr.sin_addr);
+    uint16_t port = ntohs(localaddr.sin_port);
+    char* addr = inet_ntoa(localaddr.sin_addr);
     printf("addr: %s port: %d\n", addr, port);
-    int page_fd = open("./page/mainpage.html",O_RDONLY);
+    int page_fd = open("./page/test.html",O_RDONLY);
     if (page_fd == -1){
         printf("page file open error %s\n", strerror(errno));
         exit(1);

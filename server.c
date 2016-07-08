@@ -7,7 +7,11 @@
 #include<stdlib.h>
 #include<fcntl.h>
 #include<sys/mman.h>
+#include<sys/select.h>
+#include<sys/time.h>
+//#include"fd_list.h"
 #include"load_config.h"
+static void handle_task(int ,int, void*);
 int main(int argc, char* argv[]){
     int socket_fd;
     if((socket_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP))< 0){
@@ -35,8 +39,6 @@ int main(int argc, char* argv[]){
         exit(1);
     }
     struct sockaddr_in cliaddr;
-    char *buf = malloc(1000);
-    void* temp = buf;
     int size = sizeof(cliaddr);
     int len; 
     struct sockaddr_in localaddr; 
@@ -56,14 +58,41 @@ int main(int argc, char* argv[]){
         printf("file map error %s\n", strerror(errno));
         exit(1);
     }
+    int max_fd = socket_fd;
+    fd_set readable;
+    FD_ZERO(&readable);
+    FD_SET(socket_fd, &readable);
+    int flags = fcntl(socket_fd, F_GETFL, 0);
+    fcntl(socket_fd, F_SETFL, flags | O_NONBLOCK);
+   // struct fd_list list ;
+    //list.head=NULL;
+    //list.tail = NULL;
+    //list.nodes_count = 0;
+    //add_fd(socket_fd, &list);
     for(;;){
-        
-        buf = temp;
-        if(memset(buf, '\0', 1000) == NULL){
-            printf("memset error %s\n", strerror(errno));
-            exit(1);
+        fd_set temp = readable;
+        if(select(max_fd+1, &readable, NULL, NULL, NULL) < 0){
+            printf("select error\n");
         }
-        int serv_fd = accept(socket_fd, (struct sockaddr*)&cliaddr, &size);
+        int ready_fd;
+        for(ready_fd = 0;ready_fd<=max_fd;ready_fd++){
+           if(FD_ISSET(ready_fd, &readable)){
+               break;
+           } 
+        }
+        readable = temp;
+        if(ready_fd == socket_fd){
+             int serv_fd = accept(socket_fd, (struct sockaddr*)&cliaddr, &size);
+             if(serv_fd == -1) continue;
+             FD_SET(serv_fd, &readable);
+             max_fd = serv_fd>max_fd?serv_fd:max_fd;
+        } else {
+            handle_task(ready_fd, file_size, file_addr);
+            FD_CLR(ready_fd, &readable);
+        }
+   }
+}
+void handle_task(int serv_fd, int file_size, void* file_addr){
         int pid = fork();
         if(pid != 0){
             if(pid == -1){
@@ -72,13 +101,18 @@ int main(int argc, char* argv[]){
             }
             close(serv_fd);
             printf("pid %d\n", pid);
-            continue;
+            return;
+        }
+        char *buf = malloc(1000);
+        if(memset(buf, '\0', 1000) == NULL){
+            printf("memset error %s\n", strerror(errno));
+            exit(1);
         }
         struct sockaddr_in romate_addr; 
-        len = sizeof(struct sockaddr_in);
+        int len = sizeof(struct sockaddr_in);
         getpeername(serv_fd, (struct sockaddr*)&romate_addr, &len);
-        port = ntohs(romate_addr.sin_port);
-        addr = inet_ntoa(romate_addr.sin_addr);
+        int port = ntohs(romate_addr.sin_port);
+        char* addr = inet_ntoa(romate_addr.sin_addr);
         printf("romate addr: %s port: %d\n", addr, port);
         if(serv_fd == -1){
             printf("accept error %s\n", strerror(errno));
@@ -136,8 +170,7 @@ int main(int argc, char* argv[]){
             file_addr += n;
         }
         close(serv_fd);
-        exit(0);
-    }
+        free(buf);
 }
 int get_file_size(int fd){
     FILE* f = fdopen(fd, "r");
